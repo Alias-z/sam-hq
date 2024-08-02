@@ -383,7 +383,7 @@ def train(args, net, optimizer, train_dataloaders, valid_dataloaders, lr_schedul
 
     net.train()
     _ = net.to(device=args.device)
-    
+
     sam = sam_model_registry[args.model_type](checkpoint=args.checkpoint)
     _ = sam.to(device=args.device)
     sam = torch.nn.parallel.DistributedDataParallel(sam, device_ids=[args.gpu], find_unused_parameters=args.find_unused_params)
@@ -402,7 +402,8 @@ def train(args, net, optimizer, train_dataloaders, valid_dataloaders, lr_schedul
             imgs = inputs.permute(0, 2, 3, 1).cpu().numpy()
             
             # input prompt
-            input_keys = ['box','point','noise_mask']
+            # input_keys = ['box','point','noise_mask']
+            input_keys = ['point']
             labels_box = misc.masks_to_boxes(labels[:,0,:,:])
             try:
                 labels_points = misc.masks_sample_points(labels[:,0,:,:])
@@ -596,12 +597,10 @@ def evaluate(args, net, sam, valid_dataloaders, visualize=False):
                     show_iou = torch.tensor([iou.item()])
                     show_boundary_iou = torch.tensor([boundary_iou.item()])
                     show_anns(masks_hq_vis[ii], None, labels_box[ii].cpu(), None, save_base , imgs_ii, show_iou, show_boundary_iou)
-                       
 
             loss_dict = {"val_iou_"+str(k): iou, "val_boundary_iou_"+str(k): boundary_iou}
             loss_dict_reduced = misc.reduce_dict(loss_dict)
             metric_logger.update(**loss_dict_reduced)
-
 
         print('============================')
         # gather the stats from all processes
@@ -610,85 +609,94 @@ def evaluate(args, net, sam, valid_dataloaders, visualize=False):
         resstat = {k: meter.global_avg for k, meter in metric_logger.meters.items() if meter.count > 0}
         test_stats.update(resstat)
 
-
     return test_stats
 
 
 if __name__ == "__main__":
 
-    ### --------------- Configuring the Train and Valid datasets ---------------
+    # --------------- Configuring the Train and Valid datasets ---------------
 
-    dataset_dis = {"name": "DIS5K-TR",
-                 "im_dir": "./data/DIS5K/DIS-TR/im",
-                 "gt_dir": "./data/DIS5K/DIS-TR/gt",
-                 "im_ext": ".jpg",
-                 "gt_ext": ".png"}
+    # dataset_dis = {"name": "DIS5K-TR",
+    #              "im_dir": "./data/DIS5K/DIS-TR/im",
+    #              "gt_dir": "./data/DIS5K/DIS-TR/gt",
+    #              "im_ext": ".jpg",
+    #              "gt_ext": ".png"}
 
-    dataset_thin = {"name": "ThinObject5k-TR",
-                 "im_dir": "./data/thin_object_detection/ThinObject5K/images_train",
-                 "gt_dir": "./data/thin_object_detection/ThinObject5K/masks_train",
-                 "im_ext": ".jpg",
-                 "gt_ext": ".png"}
+    # dataset_thin = {"name": "ThinObject5k-TR",
+    #              "im_dir": "./data/thin_object_detection/ThinObject5K/images_train",
+    #              "gt_dir": "./data/thin_object_detection/ThinObject5K/masks_train",
+    #              "im_ext": ".jpg",
+    #              "gt_ext": ".png"}
 
-    dataset_fss = {"name": "FSS",
-                 "im_dir": "./data/cascade_psp/fss_all",
-                 "gt_dir": "./data/cascade_psp/fss_all",
-                 "im_ext": ".jpg",
-                 "gt_ext": ".png"}
+    # dataset_fss = {"name": "FSS",
+    #              "im_dir": "./data/cascade_psp/fss_all",
+    #              "gt_dir": "./data/cascade_psp/fss_all",
+    #              "im_ext": ".jpg",
+    #              "gt_ext": ".png"}
 
-    dataset_duts = {"name": "DUTS-TR",
-                 "im_dir": "./data/cascade_psp/DUTS-TR",
-                 "gt_dir": "./data/cascade_psp/DUTS-TR",
-                 "im_ext": ".jpg",
-                 "gt_ext": ".png"}
+    # dataset_duts = {"name": "DUTS-TR",
+    #              "im_dir": "./data/cascade_psp/DUTS-TR",
+    #              "gt_dir": "./data/cascade_psp/DUTS-TR",
+    #              "im_ext": ".jpg",
+    #              "gt_ext": ".png"}
 
-    dataset_duts_te = {"name": "DUTS-TE",
-                 "im_dir": "./data/cascade_psp/DUTS-TE",
-                 "gt_dir": "./data/cascade_psp/DUTS-TE",
-                 "im_ext": ".jpg",
-                 "gt_ext": ".png"}
+    # dataset_duts_te = {"name": "DUTS-TE",
+    #              "im_dir": "./data/cascade_psp/DUTS-TE",
+    #              "gt_dir": "./data/cascade_psp/DUTS-TE",
+    #              "im_ext": ".jpg",
+    #              "gt_ext": ".png"}
 
-    dataset_ecssd = {"name": "ECSSD",
-                 "im_dir": "./data/cascade_psp/ecssd",
-                 "gt_dir": "./data/cascade_psp/ecssd",
-                 "im_ext": ".jpg",
-                 "gt_ext": ".png"}
+    # dataset_ecssd = {"name": "ECSSD",
+    #              "im_dir": "./data/cascade_psp/ecssd",
+    #              "gt_dir": "./data/cascade_psp/ecssd",
+    #              "im_ext": ".jpg",
+    #              "gt_ext": ".png"}
 
-    dataset_msra = {"name": "MSRA10K",
-                 "im_dir": "./data/cascade_psp/MSRA_10K",
-                 "gt_dir": "./data/cascade_psp/MSRA_10K",
-                 "im_ext": ".jpg",
-                 "gt_ext": ".png"}
+    # dataset_msra = {"name": "MSRA10K",
+    #              "im_dir": "./data/cascade_psp/MSRA_10K",
+    #              "gt_dir": "./data/cascade_psp/MSRA_10K",
+    #              "im_ext": ".jpg",
+    #              "gt_ext": ".png"}
 
-    # valid set
-    dataset_coift_val = {"name": "COIFT",
-                 "im_dir": "./data/thin_object_detection/COIFT/images",
-                 "gt_dir": "./data/thin_object_detection/COIFT/masks",
-                 "im_ext": ".jpg",
-                 "gt_ext": ".png"}
+    dataset_stomata = {
+        "name": "Stomata",
+        "image_dir": "./data/Stomata_detection/train_sahi",
+        "coco_json_path": "./data/Stomata_detection/train_sahi/sahi_coco.json"}
 
-    dataset_hrsod_val = {"name": "HRSOD",
-                 "im_dir": "./data/thin_object_detection/HRSOD/images",
-                 "gt_dir": "./data/thin_object_detection/HRSOD/masks_max255",
-                 "im_ext": ".jpg",
-                 "gt_ext": ".png"}
+    # # valid set
+    # dataset_coift_val = {"name": "COIFT",
+    #              "im_dir": "./data/thin_object_detection/COIFT/images",
+    #              "gt_dir": "./data/thin_object_detection/COIFT/masks",
+    #              "im_ext": ".jpg",
+    #              "gt_ext": ".png"}
 
-    dataset_thin_val = {"name": "ThinObject5k-TE",
-                 "im_dir": "./data/thin_object_detection/ThinObject5K/images_test",
-                 "gt_dir": "./data/thin_object_detection/ThinObject5K/masks_test",
-                 "im_ext": ".jpg",
-                 "gt_ext": ".png"}
+    # dataset_hrsod_val = {"name": "HRSOD",
+    #              "im_dir": "./data/thin_object_detection/HRSOD/images",
+    #              "gt_dir": "./data/thin_object_detection/HRSOD/masks_max255",
+    #              "im_ext": ".jpg",
+    #              "gt_ext": ".png"}
 
-    dataset_dis_val = {"name": "DIS5K-VD",
-                 "im_dir": "./data/DIS5K/DIS-VD/im",
-                 "gt_dir": "./data/DIS5K/DIS-VD/gt",
-                 "im_ext": ".jpg",
-                 "gt_ext": ".png"}
+    # dataset_thin_val = {"name": "ThinObject5k-TE",
+    #              "im_dir": "./data/thin_object_detection/ThinObject5K/images_test",
+    #              "gt_dir": "./data/thin_object_detection/ThinObject5K/masks_test",
+    #              "im_ext": ".jpg",
+    #              "gt_ext": ".png"}
 
-    train_datasets = [dataset_dis, dataset_thin, dataset_fss, dataset_duts, dataset_duts_te, dataset_ecssd, dataset_msra]
-    valid_datasets = [dataset_dis_val, dataset_coift_val, dataset_hrsod_val, dataset_thin_val] 
+    # dataset_dis_val = {"name": "DIS5K-VD",
+    #              "im_dir": "./data/DIS5K/DIS-VD/im",
+    #              "gt_dir": "./data/DIS5K/DIS-VD/gt",
+    #              "im_ext": ".jpg",
+    #              "gt_ext": ".png"}
+
+    dataset_stomata_val = {
+        "name": "Stomata_validation",
+        "image_dir": "./data/Stomata_detection/val_sahi",
+        "coco_json_path": "./data/Stomata_detection/val_sahi/sahi_coco.json"}
+
+    train_datasets = [dataset_stomata]
+    valid_datasets = [dataset_stomata_val]
 
     args = get_args_parser()
-    net = MaskDecoderHQ(args.model_type) 
+    net = MaskDecoderHQ(args.model_type)
 
     main(net, train_datasets, valid_datasets, args)
