@@ -277,15 +277,6 @@ class LargeScaleJitter(object):
 
 #         return sample
 
-def get_paths(input_dir: str = None, file_extensions=None) -> list:
-    """Get all file paths with certain file extensions under the input folder"""
-    if file_extensions is None:
-        file_extensions = ['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp', '.gif', '.ico', '.jfif', '.webp']
-    all_paths = []
-    for ext in file_extensions:
-        all_paths.extend(glob(os.path.join(input_dir, f'*{ext}')))
-    return all_paths
-
 
 def load_coco(file_path):
     """Load the MSCOCO json file, create a dictionary with lengths of total number of masks for PyTorch __getitem__"""
@@ -298,7 +289,7 @@ def load_coco(file_path):
 
     for annotation in data['annotations']:
         image_id = annotation['image_id']  # get the corresponding image id
-        image_path = image_id_to_path[image_id]  # get the corresponding image path
+        image_name = os.path.basename(image_id_to_path[image_id])  # get the corresponding image path
         image_width, image_height = image_dimensions[image_id]  # get dimensions from the dictionary
         segmentation = annotation['segmentation']  # get the mask segmentation in MSCOCO format
 
@@ -308,7 +299,7 @@ def load_coco(file_path):
             draw.polygon(polygon, outline=255, fill=255)  # get the mask colored with 255
         mask_array = np.array(mask_img)  # convert the PIL image to a NumPy array
         masks.append({
-            'image_path': image_path,
+            'image_name': image_name,
             'mask_array': mask_array
         })  # append the dictionary with the image path and the mask_array
     return masks
@@ -320,21 +311,22 @@ def get_im_gt_name_dict(datasets, flag='valid'):
 
     for idx, _ in enumerate(datasets):
         print("--->>>", flag, " dataset ", idx, "/", len(datasets), " ", datasets[idx]["name"], "<<<---")
-        tmp_im_list, tmp_gt_path = [], None
-        tmp_im_list = get_paths(datasets[idx]["image_dir"])
-        print('-im-', datasets[idx]["name"], datasets[idx]["im_dir"], ': ', len(tmp_im_list))
+        gt_coco_path = None
+        # image_paths = get_paths(datasets[idx]["image_dir"])
+        image_dir = datasets[idx]["image_dir"]
+        print('-im-', datasets[idx]["name"], datasets[idx]["image_dir"], ': ', len(image_dir))
 
         if not os.path.exists(datasets[idx]["coco_json_path"]):
             print('-gt-', datasets[idx]["name"], datasets[idx]["coco_json_path"], ': ', 'No Ground Truth Found')
         else:
-            tmp_gt_path = datasets[idx]["coco_json_path"]
+            gt_coco_path = datasets[idx]["coco_json_path"]
             print('-gt-', datasets[idx]["name"], datasets[idx]["coco_json_path"])
 
         name_im_gt_list.append(
             {
                 "dataset_name": datasets[idx]["name"],
-                "image_dir": tmp_im_list,
-                "coco_json_path": tmp_gt_path
+                "image_dir": image_dir,
+                "coco_json_path": gt_coco_path
             })
     return name_im_gt_list
 
@@ -350,12 +342,14 @@ class OnlineDataset(Dataset):
         im_name_list = []  # image names
         im_path_list = []  # image paths
         gt_mask_list = []  # gt masks
+        print(name_im_gt_list)
         for _, dataset in enumerate(name_im_gt_list):
             masks = load_coco(dataset["coco_json_path"])  # get the masks info from the MSCOCO json file
             dataset_names.append(dataset["dataset_name"])  # collect all the dataset names
+
             dt_name_list.extend([dataset["dataset_name"] for x in masks])  # dataset name repeated based on the number of masks in this dataset
-            im_name_list.extend([os.path.basename(mask['image_path']) for mask in masks])  # get all the image names
-            im_path_list.extend([mask['image_path'] for mask in masks])  # get all the image paths
+            im_name_list.extend([mask['image_name'] for mask in masks])  # get all the image names
+            im_path_list.extend([os.path.join(dataset['image_dir'], mask['image_name']) for mask in masks])  # get all the image paths
             gt_mask_list.extend([mask['mask_array'] for mask in masks])  # get all the masks in numpy arrays
 
         self.dataset["dataset_name"] = dt_name_list
@@ -370,7 +364,7 @@ class OnlineDataset(Dataset):
         return len(self.dataset["gt_masks"])
 
     def __getitem__(self, idx):
-        image_path = self.dataset["im_path"][idx]
+        image_path = self.dataset["image_paths"][idx]
         image = io.imread(image_path)
         gt = self.dataset["gt_masks"][idx]
 
@@ -397,7 +391,7 @@ class OnlineDataset(Dataset):
         # TODO
         if self.eval_ori_resolution:
             sample["ori_label"] = gt.type(torch.uint8)  # NOTE for evaluation only. And no flip here
-            sample['ori_im_path'] = self.dataset["im_path"][idx]
+            sample['ori_im_path'] = self.dataset["image_paths"][idx]
             # sample['ori_gt_path'] = self.dataset["gt_path"][idx]
         return sample
 
