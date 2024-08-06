@@ -256,13 +256,14 @@ def show_mask(mask, ax, random_color=False):
     h, w = mask.shape[-2:]
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
     ax.imshow(mask_image)
-    
+
 def show_points(coords, labels, ax, marker_size=375):
     pos_points = coords[labels==1]
     neg_points = coords[labels==0]
     ax.scatter(pos_points[:, 0], pos_points[:, 1], color='green', marker='*', s=marker_size, edgecolor='white', linewidth=1.25)
     ax.scatter(neg_points[:, 0], neg_points[:, 1], color='red', marker='*', s=marker_size, edgecolor='white', linewidth=1.25)   
-    
+
+
 def show_box(box, ax):
     x0, y0 = box[0], box[1]
     w, h = box[2] - box[0], box[3] - box[1]
@@ -286,7 +287,7 @@ def get_args_parser():
     parser.add_argument('--start_epoch', default=0, type=int)
     parser.add_argument('--lr_drop_epoch', default=10, type=int)
     parser.add_argument('--max_epoch_num', default=12, type=int)
-    parser.add_argument('--input_size', default=[1024,1024], type=list)
+    parser.add_argument('--input_size', default=[1024, 1024], type=list)
     parser.add_argument('--batch_size_train', default=4, type=int)
     parser.add_argument('--batch_size_valid', default=1, type=int)
     parser.add_argument('--model_save_fre', default=1, type=int)
@@ -660,8 +661,8 @@ if __name__ == "__main__":
 
     dataset_stomata = {
         "name": "Stomata",
-        "image_dir": "./data/Stomata_detection/train_sahi",
-        "coco_json_path": "./data/Stomata_detection/train_sahi/sahi_coco.json"}
+        "image_dir": "./data/Epidermal_segmentation/train_sahi",
+        "coco_json_path": "./data/Epidermal_segmentation/train_sahi/sahi_coco.json"}
 
     # # valid set
     # dataset_coift_val = {"name": "COIFT",
@@ -690,8 +691,8 @@ if __name__ == "__main__":
 
     dataset_stomata_val = {
         "name": "Stomata_validation",
-        "image_dir": "./data/Stomata_detection/val_sahi",
-        "coco_json_path": "./data/Stomata_detection/val_sahi/sahi_coco.json"}
+        "image_dir": "./data/Epidermal_segmentation/val_sahi",
+        "coco_json_path": "./data/Epidermal_segmentation/val_sahi/sahi_coco.json"}
 
     train_datasets = [dataset_stomata]
     valid_datasets = [dataset_stomata_val]
