@@ -4,14 +4,13 @@
 # data loader
 from __future__ import print_function, division
 
-import numpy as np
+import os
 import random
 from copy import deepcopy
 from skimage import io
-import os
-import json
-from glob import glob
+import numpy as np
 
+import ijson
 from PIL import Image, ImageDraw
 import torch
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
@@ -43,7 +42,7 @@ class Resize(object):
         self.size = size
 
     def __call__(self, sample):
-        imidx, image, label, shape = sample['imidx'], sample['image'], sample['label'], sample['shape']
+        imidx, image, label, shape = sample['imidx'], sample['image'], sample['label'], sample['shape']  # noqa
 
         image = torch.squeeze(F.interpolate(torch.unsqueeze(image, 0), self.size, mode='bilinear'), dim=0)
         label = torch.squeeze(F.interpolate(torch.unsqueeze(label, 0), self.size, mode='bilinear'), dim=0)
@@ -56,7 +55,7 @@ class RandomCrop(object):
         self.size = size
 
     def __call__(self, sample):
-        imidx, image, label, shape =  sample['imidx'], sample['image'], sample['label'], sample['shape']
+        imidx, image, label, shape =  sample['imidx'], sample['image'], sample['label'], sample['shape']  # noqa
 
         h, w = image.shape[1:]
         new_h, new_w = self.size
@@ -86,7 +85,7 @@ class Normalize(object):
 class LargeScaleJitter(object):
     """
         implementation of large scale jitter from copy_paste
-        https://github.com/gaopengcuhk/Pretrained-Pix2Seq/blob/7d908d499212bfabd33aeaa838778a6bfb7b84cc/datasets/transforms.py 
+        https://github.com/gaopengcuhk/Pretrained-Pix2Seq/blob/7d908d499212bfabd33aeaa838778a6bfb7b84cc/datasets/transforms.py
     """
 
     def __init__(self, output_size=1024, aug_scale_min=0.1, aug_scale_max=2.0):
@@ -104,7 +103,7 @@ class LargeScaleJitter(object):
         imidx, image, label, image_size = sample['imidx'], sample['image'], sample['label'], sample['shape']
 
         # resize keep ratio
-        out_desired_size = (self.desired_size * image_size / max(image_size)).round().int()
+        out_desired_size = (self.desired_size * image_size / max(image_size)).round().int()  # noqa
 
         random_scale = torch.rand(1) * (self.aug_scale_max - self.aug_scale_min) + self.aug_scale_min
         scaled_size = (random_scale * self.desired_size).round()
@@ -139,170 +138,36 @@ class LargeScaleJitter(object):
 
 # --------------------- dataloader online ---------------------
 
-# def get_im_gt_name_dict(datasets, flag='valid'):
-#     print("------------------------------", flag, "--------------------------------")
-#     name_im_gt_list = []
-
-#     for i in range(len(datasets)):
-#         print("--->>>", flag, " dataset ",i,"/",len(datasets)," ",datasets[i]["name"],"<<<---")
-#         tmp_im_list, tmp_gt_list = [], []
-#         tmp_im_list = glob(datasets[i]["im_dir"]+os.sep+'*'+datasets[i]["im_ext"])
-#         print('-im-',datasets[i]["name"],datasets[i]["im_dir"], ': ',len(tmp_im_list))
-
-#         if(datasets[i]["gt_dir"]==""):
-#             print('-gt-', datasets[i]["name"], datasets[i]["gt_dir"], ': ', 'No Ground Truth Found')
-#             tmp_gt_list = []
-#         else:
-#             tmp_gt_list = [datasets[i]["gt_dir"]+os.sep+x.split(os.sep)[-1].split(datasets[i]["im_ext"])[0]+datasets[i]["gt_ext"] for x in tmp_im_list]
-#             print('-gt-', datasets[i]["name"],datasets[i]["gt_dir"], ': ',len(tmp_gt_list))
-
-
-#         name_im_gt_list.append({"dataset_name":datasets[i]["name"],
-#                                 "im_path":tmp_im_list,
-#                                 "gt_path":tmp_gt_list,
-#                                 "im_ext":datasets[i]["im_ext"],
-#                                 "gt_ext":datasets[i]["gt_ext"]})
-
-#     return name_im_gt_list
-
-# def create_dataloaders(name_im_gt_list, my_transforms=[], batch_size=1, training=False):
-#     gos_dataloaders = []
-#     gos_datasets = []
-
-#     if(len(name_im_gt_list)==0):
-#         return gos_dataloaders, gos_datasets
-
-#     num_workers_ = 1
-#     if(batch_size>1):
-#         num_workers_ = 2
-#     if(batch_size>4):
-#         num_workers_ = 4
-#     if(batch_size>8):
-#         num_workers_ = 8
-
-
-#     if training:
-#         for i in range(len(name_im_gt_list)):
-#             gos_dataset = OnlineDataset([name_im_gt_list[i]], transform = transforms.Compose(my_transforms))
-#             gos_datasets.append(gos_dataset)
-
-#         gos_dataset = ConcatDataset(gos_datasets)
-#         sampler = DistributedSampler(gos_dataset)
-#         batch_sampler_train = torch.utils.data.BatchSampler(
-#             sampler, batch_size, drop_last=True)
-#         dataloader = DataLoader(gos_dataset, batch_sampler=batch_sampler_train, num_workers=num_workers_)
-
-#         gos_dataloaders = dataloader
-#         gos_datasets = gos_dataset
-
-#     else:
-#         for i in range(len(name_im_gt_list)):
-#             gos_dataset = OnlineDataset([name_im_gt_list[i]], transform = transforms.Compose(my_transforms), eval_ori_resolution = True)
-#             sampler = DistributedSampler(gos_dataset, shuffle=False)
-#             dataloader = DataLoader(gos_dataset, batch_size, sampler=sampler, drop_last=False, num_workers=num_workers_)
-
-#             gos_dataloaders.append(dataloader)
-#             gos_datasets.append(gos_dataset)
-
-#     return gos_dataloaders, gos_datasets
-
-
-# class OnlineDataset(Dataset):
-#     def __init__(self, name_im_gt_list, transform=None, eval_ori_resolution=False):
-
-#         self.transform = transform
-#         self.dataset = {}
-#         ## combine different datasets into one
-#         dataset_names = []
-#         dt_name_list = [] # dataset name per image
-#         im_name_list = [] # image name
-#         im_path_list = [] # im path
-#         gt_path_list = [] # gt path
-#         im_ext_list = [] # im ext
-#         gt_ext_list = [] # gt ext
-#         for i in range(0,len(name_im_gt_list)):
-#             dataset_names.append(name_im_gt_list[i]["dataset_name"])
-#             # dataset name repeated based on the number of images in this dataset
-#             dt_name_list.extend([name_im_gt_list[i]["dataset_name"] for x in name_im_gt_list[i]["im_path"]])
-#             im_name_list.extend([x.split(os.sep)[-1].split(name_im_gt_list[i]["im_ext"])[0] for x in name_im_gt_list[i]["im_path"]])
-#             im_path_list.extend(name_im_gt_list[i]["im_path"])
-#             gt_path_list.extend(name_im_gt_list[i]["gt_path"])
-#             im_ext_list.extend([name_im_gt_list[i]["im_ext"] for x in name_im_gt_list[i]["im_path"]])
-#             gt_ext_list.extend([name_im_gt_list[i]["gt_ext"] for x in name_im_gt_list[i]["gt_path"]])
-
-
-#         self.dataset["data_name"] = dt_name_list
-#         self.dataset["im_name"] = im_name_list
-#         self.dataset["im_path"] = im_path_list
-#         self.dataset["ori_im_path"] = deepcopy(im_path_list)
-#         self.dataset["gt_path"] = gt_path_list
-#         self.dataset["ori_gt_path"] = deepcopy(gt_path_list)
-#         self.dataset["im_ext"] = im_ext_list
-#         self.dataset["gt_ext"] = gt_ext_list
-
-#         self.eval_ori_resolution = eval_ori_resolution
-
-#     def __len__(self):
-#         return len(self.dataset["im_path"])
-#     def __getitem__(self, idx):
-#         im_path = self.dataset["im_path"][idx]
-#         gt_path = self.dataset["gt_path"][idx]
-#         im = io.imread(im_path)
-#         gt = io.imread(gt_path)
-
-#         if len(gt.shape) > 2:
-#             gt = gt[:, :, 0]
-#         if len(im.shape) < 3:
-#             im = im[:, :, np.newaxis]
-#         if im.shape[2] == 1:
-#             im = np.repeat(im, 3, axis=2)
-#         im = torch.tensor(im.copy(), dtype=torch.float32)
-#         im = torch.transpose(torch.transpose(im,1,2),0,1)
-#         gt = torch.unsqueeze(torch.tensor(gt, dtype=torch.float32),0)
-
-#         sample = {
-#         "imidx": torch.from_numpy(np.array(idx)),
-#         "image": im,
-#         "label": gt,
-#         "shape": torch.tensor(im.shape[-2:]),
-#         }
-
-#         if self.transform:
-#             sample = self.transform(sample)
-
-#         if self.eval_ori_resolution:
-#             sample["ori_label"] = gt.type(torch.uint8)  # NOTE for evaluation only. And no flip here
-#             sample['ori_im_path'] = self.dataset["im_path"][idx]
-#             sample['ori_gt_path'] = self.dataset["gt_path"][idx]
-
-#         return sample
-
-
 def load_coco(file_path):
-    """Load the MSCOCO json file, create a dictionary with lengths of total number of masks for PyTorch __getitem__"""
-    with open(file_path, 'r', encoding='utf-8') as file:
-        data = json.load(file)  # load the MSCOCO json file
-
-    masks = []  # to collect the masks
-    image_id_to_path = {image['id']: image['file_name'] for image in data['images']}  # map image IDs to image paths
-    image_dimensions = {image['id']: (image['width'], image['height']) for image in data['images']}  # image dimensions
-
-    for annotation in data['annotations']:
-        image_id = annotation['image_id']  # get the corresponding image id
-        image_name = os.path.basename(image_id_to_path[image_id])  # get the corresponding image path
-        image_width, image_height = image_dimensions[image_id]  # get dimensions from the dictionary
-        segmentation = annotation['segmentation']  # get the mask segmentation in MSCOCO format
-
-        mask_img = Image.new('L', (image_width, image_height), 0); draw = ImageDraw.Draw(mask_img)  # noqa: create a empty binary mask image
-        for segment in segmentation:
-            polygon = [(segment[idx], segment[idx + 1]) for idx in range(0, len(segment), 2)]  # convert a flat list of coordinates into pairs
-            draw.polygon(polygon, outline=255, fill=255)  # get the mask colored with 255
-        mask_array = np.array(mask_img)  # convert the PIL image to a NumPy array
-        masks.append({
-            'image_name': image_name,
-            'mask_array': mask_array
-        })  # append the dictionary with the image path and the mask_array
+    """Lazy load the MSCOCO json file to create a list of dictionaries with image names and mask IDs."""
+    with open(file_path, 'rb') as file:
+        # efficiently create a map from image ID to file name
+        image_id_to_path = {}
+        for item in ijson.items(file, 'images.item'):
+            image_id_to_path[item['id']] = item['file_name']
+        file.seek(0)  # rewind file position to the start for parsing annotations
+        # iterate over each annotation to get the mask ID and corresponding image file name
+        masks = []
+        for annotation in ijson.items(file, 'annotations.item'):
+            image_id = annotation['image_id']
+            mask_id = annotation['id']
+            if image_id in image_id_to_path:  # ensure the image_id was found in the initial mapping
+                image_name = os.path.basename(image_id_to_path[image_id])
+                masks.append({
+                    'image_name': image_name,
+                    'mask_id': mask_id
+                })
     return masks
+
+
+def fetch_segmentation_for_id(file_path, mask_id):
+    """Fetch segmentation data for a specific mask ID using ijson."""
+    with open(file_path, 'rb') as file:
+        annotations = ijson.items(file, 'annotations.item')
+        for annotation in annotations:
+            if annotation['id'] == mask_id:
+                return annotation.get('segmentation', [])
+    return []  # return an empty list if no matching mask ID is found
 
 
 def get_im_gt_name_dict(datasets, flag='valid'):
@@ -314,13 +179,18 @@ def get_im_gt_name_dict(datasets, flag='valid'):
         gt_coco_path = None
         # image_paths = get_paths(datasets[idx]["image_dir"])
         image_dir = datasets[idx]["image_dir"]
-        print('-im-', datasets[idx]["name"], datasets[idx]["image_dir"], ': ', len(image_dir))
+        print('-im-', datasets[idx]["name"], datasets[idx]["image_dir"], ': ', len(os.listdir(image_dir)) - 1)
 
         if not os.path.exists(datasets[idx]["coco_json_path"]):
             print('-gt-', datasets[idx]["name"], datasets[idx]["coco_json_path"], ': ', 'No Ground Truth Found')
         else:
             gt_coco_path = datasets[idx]["coco_json_path"]
-            print('-gt-', datasets[idx]["name"], datasets[idx]["coco_json_path"])
+            with open(gt_coco_path, 'rb') as file:
+                annotation_count = 0
+                annotations = ijson.items(file, 'annotations.item')
+                for _ in annotations:
+                    annotation_count += 1
+            print('-gt-', datasets[idx]["name"], datasets[idx]["coco_json_path"], annotation_count)
 
         name_im_gt_list.append(
             {
@@ -339,34 +209,43 @@ class OnlineDataset(Dataset):
         # combine different datasets into one
         dataset_names = []
         dt_name_list = []  # dataset name per mask
+        dt_coco_list = []  # datatset coco path per mask
         im_name_list = []  # image names
         im_path_list = []  # image paths
-        gt_mask_list = []  # gt masks
-        print(name_im_gt_list)
+        gt_mask_id_list = []  # gt masks
+
         for _, dataset in enumerate(name_im_gt_list):
             masks = load_coco(dataset["coco_json_path"])  # get the masks info from the MSCOCO json file
             dataset_names.append(dataset["dataset_name"])  # collect all the dataset names
-
             dt_name_list.extend([dataset["dataset_name"] for x in masks])  # dataset name repeated based on the number of masks in this dataset
+            dt_coco_list.extend([dataset["coco_json_path"] for x in masks])  # dataset coco path repeated based on the number of masks in this dataset
             im_name_list.extend([mask['image_name'] for mask in masks])  # get all the image names
             im_path_list.extend([os.path.join(dataset['image_dir'], mask['image_name']) for mask in masks])  # get all the image paths
-            gt_mask_list.extend([mask['mask_array'] for mask in masks])  # get all the masks in numpy arrays
+            gt_mask_id_list.extend([mask['mask_id'] for mask in masks])  # get all the masks in numpy arrays
 
         self.dataset["dataset_name"] = dt_name_list
+        self.dataset["coco_path"] = dt_coco_list
         self.dataset["image_names"] = im_name_list
         self.dataset["image_paths"] = im_path_list
         self.dataset["original_image_paths"] = deepcopy(im_path_list)
-        self.dataset["gt_masks"] = gt_mask_list
+        self.dataset["gt_mask_ids"] = gt_mask_id_list
 
         self.eval_ori_resolution = eval_ori_resolution
 
     def __len__(self):
-        return len(self.dataset["gt_masks"])
+        return len(self.dataset["gt_mask_ids"])
 
     def __getitem__(self, idx):
+        coco_path = self.dataset["coco_path"][idx]
         image_path = self.dataset["image_paths"][idx]
         image = io.imread(image_path)
-        gt = self.dataset["gt_masks"][idx]
+        gt_id = self.dataset["gt_mask_ids"][idx]
+        segmentation = fetch_segmentation_for_id(coco_path, gt_id)
+        mask_img = Image.new('L', (image.shape[1], image.shape[0]), 0); draw = ImageDraw.Draw(mask_img)  # noqa: create a empty binary mask image
+        for segment in segmentation:
+            polygon = [(segment[idx], segment[idx + 1]) for idx in range(0, len(segment), 2)]  # convert a flat list of coordinates into pairs
+            draw.polygon(polygon, outline=255, fill=255)  # get the mask colored with 255
+        gt = np.array(mask_img)  # convert the PIL image to a NumPy array
 
         if len(gt.shape) > 2:
             gt = gt[:, :, 0]
@@ -388,11 +267,9 @@ class OnlineDataset(Dataset):
         if self.transform:
             sample = self.transform(sample)
 
-        # TODO
         if self.eval_ori_resolution:
             sample["ori_label"] = gt.type(torch.uint8)  # NOTE for evaluation only. And no flip here
             sample['ori_im_path'] = self.dataset["image_paths"][idx]
-            # sample['ori_gt_path'] = self.dataset["gt_path"][idx]
         return sample
 
 
