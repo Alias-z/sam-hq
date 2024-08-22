@@ -286,7 +286,7 @@ def get_args_parser():
     parser.add_argument('--start_epoch', default=0, type=int)
     parser.add_argument('--lr_drop_epoch', default=10, type=int)
     parser.add_argument('--max_epoch_num', default=12, type=int)
-    parser.add_argument('--input_size', default=[1024, 1024], type=list)
+    parser.add_argument('--input_size', nargs=2, default=[1024, 1024], type=list)
     parser.add_argument('--batch_size_train', default=4, type=int)
     parser.add_argument('--batch_size_valid', default=1, type=int)
     parser.add_argument('--model_save_fre', default=1, type=int)
@@ -303,6 +303,12 @@ def get_args_parser():
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument("--restore-model", type=str,
                         help="The path to the hq_decoder training checkpoint for evaluation")
+
+    # Additional arguments for control over sampling
+    parser.add_argument('--even_sampling', action='store_true',
+                        help="Enable even sampling across datasets")
+    parser.add_argument('--total_samples', type=int, default=1000,
+                        help="Total samples to draw per epoch when even sampling is enabled")
 
     return parser.parse_args()
 
@@ -330,7 +336,9 @@ def main(net, train_datasets, valid_datasets, args):
                 RandomHFlip(),
                 LargeScaleJitter()],
             batch_size=args.batch_size_train,
-            training=True)
+            training=True,
+            even_sampling=args.even_sampling,
+            total_samples=args.total_samples)
         print(len(train_dataloaders), " train dataloaders created")
 
     print("--- create valid dataloader ---")
@@ -339,7 +347,9 @@ def main(net, train_datasets, valid_datasets, args):
         valid_im_gt_list,
         my_transforms=[Resize(args.input_size)],
         batch_size=args.batch_size_valid,
-        training=False)
+        training=False,
+        even_sampling=args.even_sampling,
+        total_samples=args.total_samples)
     print(len(valid_dataloaders), " valid dataloaders created")
 
     # --- Step 2: DistributedDataParallel---
@@ -401,7 +411,7 @@ def train(args, net, optimizer, train_dataloaders, valid_dataloaders, lr_schedul
 
             # input prompt
             input_keys = ['box', 'point', 'noise_mask']
-            # input_keys = ['point']
+            # input_keys = ['point', 'noise_mask']
             labels_box = misc.masks_to_boxes(labels[:, 0, :, :])
             try:
                 labels_points = misc.masks_sample_points(labels[:, 0, :, :])
@@ -614,18 +624,68 @@ if __name__ == "__main__":
 
     # --------------- Configuring the Train and Valid datasets ---------------
 
-    dataset_stomata = {
-        "name": "Stomata",
-        "image_dir": "./data/Epidermal_segmentation/train_sahi",
-        "coco_json_path": "./data/Epidermal_segmentation/train_sahi/sahi_coco.json"}
+    ClearStain_Brightfield = {
+        "name": "ClearStain_Brightfield",
+        "image_dir": "./data/ClearStain_Brightfield/train_sahi",
+        "coco_json_path": "./data/ClearStain_Brightfield/train_sahi/sahi_coco.json"}
 
-    dataset_stomata_val = {
-        "name": "Stomata_validation",
-        "image_dir": "./data/Epidermal_segmentation/val_sahi",
-        "coco_json_path": "./data/Epidermal_segmentation/val_sahi/sahi_coco.json"}
+    ClearStain_Brightfield_val = {
+        "name": "ClearStain_Brightfield_validation",
+        "image_dir": "./data/ClearStain_Brightfield/val_sahi",
+        "coco_json_path": "./data/ClearStain_Brightfield/val_sahi/sahi_coco.json"}
 
-    train_datasets = [dataset_stomata]
-    valid_datasets = [dataset_stomata_val]
+    Imprints_Brightfield = {
+        "name": "Imprints_Brightfield",
+        "image_dir": "./data/Imprints_Brightfield/train_sahi",
+        "coco_json_path": "./data/Imprints_Brightfield/train_sahi/sahi_coco.json"}
+
+    Imprints_Brightfield_val = {
+        "name": "Imprints_Brightfield_validation",
+        "image_dir": "./data/Imprints_Brightfield/val_sahi",
+        "coco_json_path": "./data/Imprints_Brightfield/val_sahi/sahi_coco.json"}
+
+    Imprints_DIC = {
+        "name": "Imprints_DIC",
+        "image_dir": "./data/Imprints_DIC/train_sahi",
+        "coco_json_path": "./data/Imprints_DIC/train_sahi/sahi_coco.json"}
+
+    Imprints_DIC_val = {
+        "name": "Imprints_DIC_validation",
+        "image_dir": "./data/Imprints_DIC/val_sahi",
+        "coco_json_path": "./data/Imprints_DIC/val_sahi/sahi_coco.json"}
+
+    Leaf_Brightfield = {
+        "name": "Leaf_Brightfield",
+        "image_dir": "./data/Leaf_Brightfield/train_sahi",
+        "coco_json_path": "./data/Leaf_Brightfield/train_sahi/sahi_coco.json"}
+
+    Leaf_Brightfield_val = {
+        "name": "Leaf_Brightfield_validation",
+        "image_dir": "./data/Leaf_Brightfield/val_sahi",
+        "coco_json_path": "./data/Leaf_Brightfield/val_sahi/sahi_coco.json"}
+
+    Peels_Brightfield = {
+        "name": "Peels_Brightfield",
+        "image_dir": "./data/Peels_Brightfield/train_sahi",
+        "coco_json_path": "./data/Peels_Brightfield/train_sahi/sahi_coco.json"}
+
+    Peels_Brightfield_val = {
+        "name": "Peels_Brightfield_validation",
+        "image_dir": "./data/Peels_Brightfield/val_sahi",
+        "coco_json_path": "./data/Peels_Brightfield/val_sahi/sahi_coco.json"}
+
+    Peels_SEM = {
+        "name": "Peels_SEM",
+        "image_dir": "./data/Peels_SEM/train_sahi",
+        "coco_json_path": "./data/Peels_SEM/train_sahi/sahi_coco.json"}
+
+    Peels_SEM_val = {
+        "name": "Peels_SEM_validation",
+        "image_dir": "./data/Peels_SEM/val_sahi",
+        "coco_json_path": "./data/Peels_SEM/val_sahi/sahi_coco.json"}
+
+    train_datasets = [ClearStain_Brightfield, Imprints_Brightfield, Imprints_DIC, Leaf_Brightfield, Peels_Brightfield, Peels_SEM]
+    valid_datasets = [ClearStain_Brightfield_val, Imprints_Brightfield_val, Imprints_DIC_val, Leaf_Brightfield_val, Peels_Brightfield_val, Peels_SEM_val]
 
     args = get_args_parser()
     net = MaskDecoderHQ(args.model_type)

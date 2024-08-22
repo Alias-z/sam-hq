@@ -13,7 +13,7 @@ import numpy as np
 import ijson
 from PIL import Image, ImageDraw
 import torch
-from torch.utils.data import Dataset, DataLoader, ConcatDataset
+from torch.utils.data import Dataset, DataLoader, ConcatDataset, Sampler, BatchSampler
 from torchvision import transforms, utils
 from torchvision.transforms.functional import normalize
 import torch.nn.functional as F
@@ -201,6 +201,44 @@ def get_im_gt_name_dict(datasets, flag='valid'):
     return name_im_gt_list
 
 
+class EvenSampler(Sampler):
+    def __init__(self, datasets, total_samples):
+        self.datasets = datasets
+        self.dataset_lengths = [len(ds) for ds in datasets]
+        self.total_samples = total_samples
+        self.samples_per_dataset = total_samples // len(datasets)
+        self.epoch = 0
+
+    def set_epoch(self, epoch):
+        self.epoch = epoch
+        random.seed(epoch)
+
+    def __iter__(self):
+        flat_indices = []
+        start = 0
+        for i, ds_len in enumerate(self.dataset_lengths):
+            end = start + ds_len
+            if ds_len >= self.samples_per_dataset:
+                indices = torch.randperm(ds_len)[:self.samples_per_dataset] + start
+            else:
+                indices = torch.randint(low=start, high=end, size=(self.samples_per_dataset,))
+            flat_indices.extend(indices.tolist())
+            # Print each sampled image details as indices are generated
+            # for idx in indices:
+            #     local_idx = idx - start  # Adjust index relative to the start of the current dataset
+            #     dataset = self.datasets[i]
+            #     image_path = os.path.basename(dataset.dataset["image_paths"][local_idx])
+            #     mask_id = dataset.dataset["gt_mask_ids"][local_idx]
+            #     dataset_name = dataset.dataset["dataset_name"][local_idx]
+            #     print(f"Sampled from Dataset: {dataset_name}: {image_path}: mask id {mask_id}")
+            start = end
+        random.shuffle(flat_indices)
+        return iter(flat_indices[:self.total_samples])
+
+    def __len__(self):
+        return self.total_samples
+
+
 class OnlineDataset(Dataset):
     def __init__(self, name_im_gt_list, transform=None, eval_ori_resolution=False):
 
@@ -273,7 +311,7 @@ class OnlineDataset(Dataset):
         return sample
 
 
-def create_dataloaders(name_im_gt_list, my_transforms=[], batch_size=1, training=False):
+def create_dataloaders(name_im_gt_list, my_transforms=[], batch_size=1, training=False, even_sampling=True, total_samples=100):
     gos_dataloaders = []
     gos_datasets = []
 
@@ -288,27 +326,31 @@ def create_dataloaders(name_im_gt_list, my_transforms=[], batch_size=1, training
     elif batch_size > 8:
         num_workers_ = 8
 
+    for _, dataset in enumerate(name_im_gt_list):
+        # Set eval_ori_resolution based on the phase
+        gos_dataset = OnlineDataset([dataset], transform=transforms.Compose(my_transforms), eval_ori_resolution=not training)
+        gos_datasets.append(gos_dataset)
+
+    gos_dataset = ConcatDataset(gos_datasets)
+
+    # Determine if EvenSampler should be used based on phase and configuration
+    if even_sampling:
+        sampler = EvenSampler(gos_datasets, total_samples)
+    else:
+        sampler = DistributedSampler(gos_dataset, shuffle=training)
+
+    # Configure BatchSampler with appropriate drop_last setting
+    batch_sampler = torch.utils.data.BatchSampler(sampler, batch_size, drop_last=training)
+
+    # Create DataLoader with the batch_sampler
+    dataloader = DataLoader(gos_dataset, batch_sampler=batch_sampler, num_workers=num_workers_)
+
+    # Assign dataloader and dataset to appropriate variables based on phase
     if training:
-        for _, dataset in enumerate(name_im_gt_list):
-            gos_dataset = OnlineDataset([dataset], transform=transforms.Compose(my_transforms))
-            gos_datasets.append(gos_dataset)
-
-        gos_dataset = ConcatDataset(gos_datasets)
-        sampler = DistributedSampler(gos_dataset)
-        batch_sampler_train = torch.utils.data.BatchSampler(
-            sampler, batch_size, drop_last=True)
-        dataloader = DataLoader(gos_dataset, batch_sampler=batch_sampler_train, num_workers=num_workers_)
-
         gos_dataloaders = dataloader
         gos_datasets = gos_dataset
-
     else:
-        for _, dataset in enumerate(name_im_gt_list):
-            gos_dataset = OnlineDataset([dataset], transform=transforms.Compose(my_transforms), eval_ori_resolution=True)
-            sampler = DistributedSampler(gos_dataset, shuffle=False)
-            dataloader = DataLoader(gos_dataset, batch_size, sampler=sampler, drop_last=False, num_workers=num_workers_)
-
-            gos_dataloaders.append(dataloader)
-            gos_datasets.append(gos_dataset)
+        gos_dataloaders.append(dataloader)
+        gos_datasets.append(gos_dataset)
 
     return gos_dataloaders, gos_datasets
